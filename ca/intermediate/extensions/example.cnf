@@ -1,0 +1,36 @@
+# CN: www.example.com
+[ req ]
+default_bits       = 2048
+default_md         = sha512
+prompt             = no
+encrypt_key        = no
+string_mask = nombstr
+
+distinguished_name = req_distinguished_name
+
+
+req_extensions     = v3_req
+copy_extensions = copy
+
+[ req_distinguished_name ]
+C=CA
+ST=Quebec
+L=Montreal
+O=SVDX.NET
+OU=VMware ESX Servers
+CN=www.example.com
+
+
+
+[ v3_req ]
+
+
+
+
+[ server_ext ]
+basicConstraints        = CA:FALSE
+subjectKeyIdentifier    = hash
+authorityKeyIdentifier  = keyid, issuer
+keyUsage                = digitalSignature, keyEncipherment, dataEncipherment
+extendedKeyUsage        = serverAuth, clientAuth
+subjectAltName          = DNS:ftp.example.com, IP:192.168.0.1,DNS:ftp

@@ -1,0 +1,366 @@
+#!/bin/bash
+
+# where is our CA (intermediate)
+CADIR="/ca/intermediate"
+OVPNCONF="/etc/ca_tools/ovpn_base_cfg.conf"
+PASSFILE="/etc/ca_tools/a_pass.txt"
+EXTENSIONS="extensions"
+USERSPATH="users/"
+WEBFOLDER="/var/www/html/secure/${USERSPATH}"
+
+NEWCERTDATE=`date +%Y%m%d`
+ORG="EXAMPLEORG"
+EDOM="example.com"
+COUNTRY='CA'
+STATE='Quebec'
+LOCATION='Montreal'
+
+
+
+
+
+function get_cert_date() 
+{
+  echo "Certname is[certdate]: $CERTNAME"
+
+if [ "$1" ==  "server" ] ; then 
+  CERTPATH=""
+else 
+  CERTPATH="${USERSPATH}"
+
+fi
+CERTDATE=`ls $CADIR/certs/$CERTPATH | grep $CERTNAME | grep cert.pem | awk -F_ '{print \$2}' | awk -F. '{print \$1}' | awk 'NF' | tail -n 1`
+
+if [ -v ${CERTDATE} ]; then
+echo "No appropriate certificate found!"
+exit 1
+else
+  echo "Using certificate $CADIR/certs/${CERTPATH}${CERTNAME}_${CERTDATE}.cert.pem for reference"
+fi
+}
+
+
+
+
+# if we are creating a user cert 
+
+function create_user_cert() {
+
+echo "Creating certificate for user $CERTNAME"
+
+SUBJ="/C=$COUNTRY/ST=$STATE/L=$LOCATION/O=$ORG/CN=${CERTNAME}/emailAddress=${CERTNAME}@$EDOM"
+openssl genrsa -out $CADIR/private/${USERSPATH}${CERTNAME}_$NEWCERTDATE.key.pem 2048
+
+if [ -f $CADIR/private/${USERSPATH}${CERTNAME}_$NEWCERTDATE.key.pem ]; then 
+openssl req -new -key $CADIR/private/${USERSPATH}${CERTNAME}_$NEWCERTDATE.key.pem \
+-out $CADIR/csr/${USERSPATH}${CERTNAME}_$NEWCERTDATE.csr \
+-config $CADIR/openssl.cnf \
+-subj $SUBJ
+else 
+echo "key is not present exiting..."
+fi 
+
+if [ -f  $CADIR/csr/${USERSPATH}${CERTNAME}_$NEWCERTDATE.csr ]; then 
+openssl x509 -req -days 180 \
+-CA $CADIR/certs/intermediate.cert.pem \
+-CAkey $CADIR/private/intermediate.key.pem \
+-CAcreateserial \
+-in $CADIR/csr/${USERSPATH}${CERTNAME}_$NEWCERTDATE.csr \
+-out $CADIR/certs/${USERSPATH}${CERTNAME}_$NEWCERTDATE.cert.pem \
+-passin file:$PASSFILE \
+-extensions usr_cert \
+-extfile $CADIR/openssl.cnf
+
+else 
+echo "CSR request not present exiting..."
+fi
+
+if [ -f $CADIR/certs/${USERSPATH}${CERTNAME}_$NEWCERTDATE.cert.pem ]; then
+echo "we have a certificate,verifying..."
+
+verify_cert 
+
+ 
+fi 
+}
+
+
+
+# *************************************************
+# if we are creating a server cert $1 is the server
+# *************************************************
+
+ 
+function create_server_cert() {
+
+echo "Creating certificate for Server ${CERTNAME}"
+
+if [ -f $CADIR/$EXTENSIONS/${CERTNAME}.cnf ]; then
+  SSLCONFIG="$CADIR/$EXTENSIONS/${CERTNAME}.cnf"
+else
+  echo "necessary config does not exist for server ${CERTNAME} falling back..."
+  SUBJ="/C=$COUNTRY/ST=$STATE/L=$LOCATION/O=$ORG/CN=${CERTNAME}"
+  SSLCONFIG="$CADIR/openssl.cnf"
+fi
+
+
+  openssl genrsa -out $CADIR/private/${CERTNAME}_$NEWCERTDATE.key.pem 2048
+
+  if [ -f $CADIR/private/${CERTNAME}_$NEWCERTDATE.key.pem ];  then 
+    if [ ! -f $CADIR/$EXTENSIONS/${CERTNAME}.cnf ]; then
+      openssl req -new \
+        -key $CADIR/private/${CERTNAME}_$NEWCERTDATE.key.pem \
+         -out $CADIR/csr/${CERTNAME}_$NEWCERTDATE.csr \
+        -config $SSLCONFIG \
+        -subj $SUBJ
+      else
+      openssl req -new \
+        -key $CADIR/private/${CERTNAME}_$NEWCERTDATE.key.pem \
+        -out $CADIR/csr/${CERTNAME}_$NEWCERTDATE.csr \
+        -config $SSLCONFIG
+      fi
+  else 
+    echo "key or config is not present exiting..."
+  fi 
+
+
+  if [ -f  $CADIR/csr/${CERTNAME}_$NEWCERTDATE.csr ]; then 
+
+    openssl x509 -req -days 365 \
+      -CA $CADIR/certs/intermediate.cert.pem \
+      -CAkey $CADIR/private/intermediate.key.pem \
+      -CAcreateserial -in $CADIR/csr/${CERTNAME}_$NEWCERTDATE.csr \
+      -out $CADIR/certs/${CERTNAME}_$NEWCERTDATE.cert.pem \
+      -extensions server_ext \
+      -passin file:$PASSFILE \
+      -extfile $SSLCONFIG
+
+  else 
+    echo "CSR request not present exiting..."
+  fi
+  if [ -f $CADIR/certs/${CERTNAME}_$NEWCERTDATE.cert.pem ]; then
+    echo "we have a certificate,verifying..."
+
+     verify_cert "server" $1 
+
+  fi
+
+}
+
+######################################
+#    do stuff with the certs...      #
+######################################
+
+
+
+
+function verify_cert() {
+echo "Validating certificate..."
+
+if [ "$1" ==  "server" ] ; then 
+
+get_cert_date "server"
+CERTPATH=""
+else 
+
+get_cert_date 
+CERTPATH="${USERSPATH}"
+fi
+
+if  [ -f  $CADIR/certs/ca-chain.cert.pem ] &&  [ -f "$CADIR/certs/${CERTPATH}${CERTNAME}_${CERTDATE}.cert.pem" ] ; then 
+
+if openssl verify -CAfile $CADIR/certs/ca-chain.cert.pem "$CADIR/certs/${CERTPATH}${CERTNAME}_${CERTDATE}.cert.pem"  > /dev/null ; then
+    echo "Certificate is valid"
+   return 0
+else
+   echo "Certificate is not valid"
+   return 1
+fi
+else "certificate does not exist: $CADIR/certs/${CERTPATH}${CERTNAME}_${CERTDATE}.cert.pem"
+fi 
+}
+
+
+
+function convert_pkcs12() {
+
+  if [ "$1" ==  "server" ] ; then 
+    get_cert_date "server"
+    CERTPATH=""
+  else 
+
+    get_cert_date 
+    CERTPATH="${USERSPATH}"
+  fi
+
+
+
+
+  
+	if [ -f $CADIR/private/${CERTPATH}${CERTNAME}_$CERTDATE.key.pem ] && [ -f $CADIR/certs/${CERTPATH}${CERTNAME}_$CERTDATE.cert.pem ] && [ -f $CADIR/certs/ca-chain.cert.pem ];  then
+	 echo "all necessary file present exporting..."
+      openssl pkcs12 -export -out $CADIR/certs/${CERTPATH}${CERTNAME}_$CERTDATE.cert.simple.pfx -inkey $CADIR/private/${CERTPATH}${CERTNAME}_$CERTDATE.key.pem -in $CADIR/certs/${CERTPATH}${CERTNAME}_$CERTDATE.cert.pem 
+      openssl pkcs12 -export -out $CADIR/certs/${CERTPATH}${CERTNAME}_$CERTDATE.cert.cplx.pfx -inkey $CADIR/private/${CERTPATH}${CERTNAME}_$CERTDATE.key.pem -in $CADIR/certs/${CERTPATH}${CERTNAME}_$CERTDATE.cert.pem  -certfile $CADIR/certs/ca-chain.cert.pem 	
+    else 
+   
+     echo "check your files some are missing..."
+     echo "you should have the following:"
+     echo "$CADIR/certs/${CERTPATH}${CERTNAME}_$CERTDATE.cert.pem"
+     echo "$CADIR/private/${CERTPATH}${CERTNAME}_$CERTDATE.key.pem"
+     echo "$CADIR/certs/ca-chain.cert.pem"   
+     
+
+	fi
+}
+
+
+
+function print_cert() {
+
+
+
+  if [ "$1" ==  "server" ] ; then 
+    get_cert_date "server"
+    CERTPATH=""
+  else 
+
+    get_cert_date 
+    CERTPATH="${USERSPATH}"
+  fi
+    CERTFILE=
+  if [ -f "$CADIR/certs/${CERTPATH}${CERTNAME}_${CERTDATE}.cert.pem" ] ; then
+    openssl x509 -noout -text -in "$CADIR/certs/${CERTPATH}${CERTNAME}_${CERTDATE}.cert.pem"
+  else
+    echo "Certificate does not exist"
+    echo $CERTFILE
+  fi
+
+}
+
+function create_ovpn_profile() {
+
+
+get_cert_date 
+if [ -f $OVPNCONF ] ; then
+  if [ -f "$CADIR/private/${USERSPATH}${CERTNAME}_${CERTDATE}.key.pem" ] && [ -f "$CADIR/certs/${USERSPATH}${CERTNAME}_${CERTDATE}.cert.pem" ] && [ -f $CADIR/certs/ca-chain.cert.pem ] ; then
+       if [ -f $CADIR/ovpn/${CERTNAME}.ovpn ] ; then 
+         mv $CADIR/ovpn/${CERTNAME}.ovpn $CADIR/ovpn/${CERTNAME}.ovpn.$CERTDATE.old 
+       fi
+      echo "Creating Ovpn profile: $CADIR/ovpn/${CERTNAME}.ovpn"
+      cat  $OVPNCONF >> $CADIR/ovpn/${CERTNAME}.ovpn 
+      echo "<ca>"  >> $CADIR/ovpn/${CERTNAME}.ovpn
+      cat  $CADIR/certs/ca-chain.cert.pem  >> $CADIR/ovpn/${CERTNAME}.ovpn
+      echo "</ca>"  >> $CADIR/ovpn/${CERTNAME}.ovpn
+      echo "<cert>"  >> $CADIR/ovpn/${CERTNAME}.ovpn
+      cat $CADIR/certs/${USERSPATH}${CERTNAME}_${CERTDATE}.cert.pem  >> $CADIR/ovpn/${CERTNAME}.ovpn
+      echo "</cert>"  >> $CADIR/ovpn/${CERTNAME}.ovpn
+      echo "<key>"  >> $CADIR/ovpn/${CERTNAME}.ovpn
+      cat $CADIR/private/${USERSPATH}${CERTNAME}_${CERTDATE}.key.pem  >> $CADIR/ovpn/${CERTNAME}.ovpn
+      echo "</key>"  >> $CADIR/ovpn/${CERTNAME}.ovpn    
+
+  else 
+    echo "Could not find a certificate to make profile"
+  fi
+else 
+  echo "Could not Find OpenVPN Base profile"
+fi
+
+}
+
+function copy_and_zip_to_web() {
+
+  
+  get_cert_date 
+  if [ -f ${WEBFOLDER}${CERTNAME}.zip ];then
+    rm ${WEBFOLDER}${CERTNAME}.zip
+  fi
+  if [ -f $CADIR/ovpn/${CERTNAME}.ovpn ]; then
+    #echo "zip $WEBFOLDER${CERTNAME}.zip $CADIR/certs/ca-chain.cert.pem $CADIR/certs/${USERSPATH}${CERTNAME}_$CERTDATE.cert.pem  $CADIR/private/${USERSPATH}${CERTNAME}_$CERTDATE.key.pem $CADIR/ovpn/${CERTNAME}.ovpn"
+    zip -j ${WEBFOLDER}${CERTNAME}.zip $CADIR/certs/ca-chain.cert.pem $CADIR/certs/${USERSPATH}${CERTNAME}_$CERTDATE.cert.pem  $CADIR/private/${USERSPATH}${CERTNAME}_$CERTDATE.key.pem $CADIR/ovpn/${CERTNAME}.ovpn
+  else 
+    echo "OpenVPN does not exist ..skipping"
+    #echo  "zip -j $WEBFOLDER$1.zip $CADIR/certs/ca-chain.cert.pem $CADIR/certs/${USERSPATH}${CERTNAME}_$CERTDATE.cert.pem  $CADIR/private/${USERSPATH}${CERTNAME}_$CERTDATE.key.pem"
+    zip -j ${WEBFOLDER}${CERTNAME}.zip $CADIR/certs/ca-chain.cert.pem $CADIR/certs/${USERSPATH}${CERTNAME}_$CERTDATE.cert.pem  $CADIR/private/${USERSPATH}${CERTNAME}_$CERTDATE.key.pem
+  fi
+  if [ -f $CADIR/certs/${CERTPATH}${CERTNAME}_$CERTDATE.cert.simple.pfx ]; then
+    zip ${WEBFOLDER}${CERTNAME}.zip $CADIR/certs/${CERTPATH}${CERTNAME}_$CERTDATE.cert.simple.pfx
+    else 
+      echo "Simple pkcs12 does not exist ..skipping"
+    
+  fi
+  if [ -f $CADIR/certs/${USERSPATH}${CERTNAME}_$CERTDATE.cert.cplx.pfx ]; then
+  zip ${WEBFOLDER}${CERTNAME}.zip $CADIR/certs/${USERSPATH}${CERTNAME}_$CERTDATE.cert.cplx.pfx
+    else 
+      echo "Complex pkcs12 does not exist ..skipping"
+  fi
+  
+
+}
+
+function print_help () {
+ echo " 
+     Usage: 
+        -s name
+        -u [ -o -w -p ] name
+        [ -o -w -p] name
+        [-p -c -v] server name
+        
+        -u     creates a user certificate
+        -s     creates a server certificate
+        -c     converts a user certificate to pkcs12 format
+        -v     verify/validate a certificate 
+        -p     print/view a certificate
+        -r     revoke certificate (not implemented) 
+        -l     list a certificates (not implemented) 
+        -o     creates a OpenVPN Profile from certificates
+        -w     zip and copies to web folder
+        name   the common name of the user / server
+        
+"        
+}
+
+#function list_certs() {
+
+#}
+
+# switch: what command are we running
+
+for i; do :; done
+CERTNAME="$i"
+
+
+
+while [[ "$#" -gt 0 ]]; do case $1 in
+
+  -u|--user) create_user_cert ; shift;;
+  -s|--server) create_server_cert  ; shift;;
+  -c|--convert) convert_pkcs12 ; shift;;
+  -v|--verify)
+    if [ "$2" == "server" ] ; then
+      verify_cert "server" ; shift
+    else 
+      verify_cert 
+    fi; shift;;
+  -p|--print)
+    if [ "$2" == "server" ] ; then
+      print_cert "server"  ; shift
+    else
+      print_cert 
+    fi;shift;;
+  -o|--ovpn)
+    create_ovpn_profile ; shift;;
+  -w|--web) 
+     copy_and_zip_to_web ; shift;;
+  *)
+
+    if [[ "$#" -lt 2 ]]; then
+      print_help
+    fi
+
+  exit 1;;
+
+esac; shift; done
+
+
+
+
