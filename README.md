@@ -7,7 +7,7 @@ This is a quick script /Tool to create certificate more easily ... it uses opens
 Edit the variables at the top to suit your own network/ca
 
 the CA needs to be already setup its recomended you use a intermediate CA since you will be saving the password ( to sign the certs) 
-so create a CA save that somewhere and add an intermediate that you can totogenerate the certs on the fly. 
+so create a CA save that somewhere and add an intermediate that you can toto-generate the certs on the fly with. 
 
 this will generate csr, certificate key , validate those then it can create a ovpn from a template and append the certificates to it
 the "view certificate" is defunct i think ( need some work) 
