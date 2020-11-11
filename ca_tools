@@ -9,7 +9,7 @@ USERSPATH="users/"
 WEBFOLDER="/var/www/html/secure/${USERSPATH}"
 
 NEWCERTDATE=`date +%Y%m%d`
-ORG="EXAMPLEORG"
+ORG="example-org"
 EDOM="example.com"
 COUNTRY='CA'
 STATE='Quebec'
@@ -21,7 +21,7 @@ LOCATION='Montreal'
 
 function get_cert_date() 
 {
-  echo "Certname is[certdate]: $CERTNAME"
+
 
 if [ "$1" ==  "server" ] ; then 
   CERTPATH=""
@@ -75,9 +75,9 @@ else
 echo "CSR request not present exiting..."
 fi
 
-if [ -f $CADIR/certs/${USERSPATH}${CERTNAME}_$NEWCERTDATE.cert.pem ]; then
+if [ -f "$CADIR/certs/${USERSPATH}${CERTNAME}_$NEWCERTDATE.cert.pem" ]; then
 echo "we have a certificate,verifying..."
-
+echo "$CADIR/certs/${USERSPATH}${CERTNAME}_$NEWCERTDATE.cert.pem"
 verify_cert 
 
  
@@ -244,7 +244,7 @@ get_cert_date
 if [ -f $OVPNCONF ] ; then
   if [ -f "$CADIR/private/${USERSPATH}${CERTNAME}_${CERTDATE}.key.pem" ] && [ -f "$CADIR/certs/${USERSPATH}${CERTNAME}_${CERTDATE}.cert.pem" ] && [ -f $CADIR/certs/ca-chain.cert.pem ] ; then
        if [ -f $CADIR/ovpn/${CERTNAME}.ovpn ] ; then 
-         mv $CADIR/ovpn/${CERTNAME}.ovpn $CADIR/ovpn/${CERTNAME}.ovpn.$CERTDATE.old 
+         mv $CADIR/ovpn/${CERTNAME}.ovpn $CADIR/ovpn/${CERTNAME}.ovpn.${CERTDATE}.old 
        fi
       echo "Creating Ovpn profile: $CADIR/ovpn/${CERTNAME}.ovpn"
       cat  $OVPNCONF >> $CADIR/ovpn/${CERTNAME}.ovpn 
@@ -332,32 +332,32 @@ CERTNAME="$i"
 
 while [[ "$#" -gt 0 ]]; do case $1 in
 
-  -u|--user) create_user_cert ; shift;;
-  -s|--server) create_server_cert  ; shift;;
-  -c|--convert) convert_pkcs12 ; shift;;
+  -u|--user) create_user_cert ;; 
+  -s|--server) create_server_cert  ;; 
+
   -v|--verify)
     if [ "$2" == "server" ] ; then
       verify_cert "server" ; shift
     else 
       verify_cert 
-    fi; shift;;
+    fi;;
   -p|--print)
     if [ "$2" == "server" ] ; then
       print_cert "server"  ; shift
     else
       print_cert 
-    fi;shift;;
+    fi;;
   -o|--ovpn)
-    create_ovpn_profile ; shift;;
+    create_ovpn_profile ;; 
+  -c|--convert) convert_pkcs12 ;; 
   -w|--web) 
-     copy_and_zip_to_web ; shift;;
+     copy_and_zip_to_web ;; 
   *)
 
-    if [[ "$#" -lt 2 ]]; then
+    if [[ "$#" -gt 1 ]]; then
       print_help
     fi
-
-  exit 1;;
+    exit 1;;
 
 esac; shift; done
 
